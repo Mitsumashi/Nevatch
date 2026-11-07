@@ -537,6 +537,16 @@ namespace Nevatch.Server
         public bool Enabled, Connected;
         public long Up, Down;
         public DateTime? LastActive, ConnectedSince; // UTC
+        public List<Device> Devices = new List<Device>(); // connected ones first
+        public bool OtherApp; // connected through a phone app like v2rayNG, which doesn't say which device
+    }
+
+    // One of a person's devices, as its Nevatch reported it with its pings.
+    public class Device
+    {
+        public string Name, Os, App;
+        public bool Connected;
+        public DateTime? ConnectedSince, LastSeen; // UTC
     }
 
     // Round trips in ms, oldest first; -1 = no answer.
@@ -582,8 +592,24 @@ namespace Nevatch.Server
             foreach (object item in Json.List(Json.Get(o, "users")))
             {
                 Dictionary<string, object> u = Json.Obj(item);
+                var devices = new List<Device>();
+                foreach (object d in Json.List(Json.Get(u, "devices")))
+                {
+                    Dictionary<string, object> o2 = Json.Obj(d);
+                    devices.Add(new Device
+                    {
+                        Name = Json.Str(Json.Get(o2, "name")) ?? "Unknown device",
+                        Os = Json.Str(Json.Get(o2, "os")) ?? "",
+                        App = Json.Str(Json.Get(o2, "app")) ?? "",
+                        Connected = Json.Bool(Json.Get(o2, "connected")),
+                        ConnectedSince = Json.Time(Json.Get(o2, "connectedSince")),
+                        LastSeen = Json.Time(Json.Get(o2, "lastSeen")) ?? Json.Time(Json.Get(o2, "firstSeen")),
+                    });
+                }
                 s.People.Add(new Person
                 {
+                    Devices = devices,
+                    OtherApp = Json.Bool(Json.Get(u, "otherApp")),
                     Id = Json.Str(Json.Get(u, "id")) ?? "",
                     Name = Json.Str(Json.Get(u, "name")) ?? "",
                     Link = Json.Str(Json.Get(u, "link")),
@@ -1030,8 +1056,12 @@ namespace Nevatch.Server
     }
 
     // One person on the People page: whether they're connected, how much they used, and what you can do.
-    public class PersonRow : Card
+    public class PersonRow : Card, ISizedRow
     {
+        // People whose device list is open; kept while the rows are rebuilt.
+        static readonly HashSet<string> openIds = new HashSet<string>();
+        const int BaseHeight = 132, LinkHeight = 26, DeviceHeight = 26;
+        Rectangle link; // the "2 devices connected ▸" line, which opens and closes the list
         static readonly string[] WidestTexts = { "Copy key", "Disable", "Remove" };
         public readonly OutlineButton CopyKey = new OutlineButton { Text = "Copy key" };
         public readonly OutlineButton Toggle = new OutlineButton();
@@ -1048,9 +1078,45 @@ namespace Nevatch.Server
 
         public void Set(Person person)
         {
+            int before = Person != null ? RowHeight : -1;
             Person = person;
             Toggle.Text = person.Enabled ? "Disable" : "Enable";
+            if (before != -1 && before != RowHeight && Parent != null) Parent.PerformLayout();
             Invalidate();
+        }
+
+        int DeviceCount { get { return Person.Devices.Count + (Person.OtherApp ? 1 : 0); } }
+        bool HasDevices { get { return Person.Enabled && DeviceCount > 0; } }
+        bool Open { get { return HasDevices && openIds.Contains(Person.Id); } }
+
+        public int RowHeight
+        {
+            get { return BaseHeight + (HasDevices ? LinkHeight : 0) + (Open ? DeviceCount * DeviceHeight + 6 : 0); }
+        }
+
+        string DevicesText()
+        {
+            Person p = Person;
+            int live = p.Devices.Count(d => d.Connected) + (p.OtherApp ? 1 : 0);
+            string text = live > 0
+                ? live + (p.OtherApp ? "+" : "") + (live == 1 && !p.OtherApp ? " device" : " devices") + " connected"
+                : Pretty.Count(p.Devices.Count, "device", "devices");
+            return text + (Open ? "  ▾" : "  ▸");
+        }
+
+        protected override void OnMouseClick(MouseEventArgs e)
+        {
+            base.OnMouseClick(e);
+            if (!HasDevices || !link.Contains(e.Location)) return;
+            if (!openIds.Remove(Person.Id)) openIds.Add(Person.Id);
+            if (Parent != null) Parent.PerformLayout();
+            Invalidate();
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            Cursor = HasDevices && link.Contains(e.Location) ? Cursors.Hand : Cursors.Default;
         }
 
         public void ShowCopied()
@@ -1106,8 +1172,53 @@ namespace Nevatch.Server
                 : p.Connected ? "Connected " + (p.ConnectedSince.HasValue ? Pretty.ConnectedFor(p.ConnectedSince.Value) : "now")
                 : p.LastActive.HasValue ? "Not connected · last active " + Pretty.Ago(p.LastActive.Value)
                 : "Never connected";
+            int textH = Look.LineHeight(Fonts.CardText), y = top + nameH + Theme.S(4);
             TextRenderer.DrawText(g, state + "  ·  ↓ " + Pretty.Bytes(p.Down) + "  ·  ↑ " + Pretty.Bytes(p.Up), Fonts.CardText,
-                new Rectangle(left, top + nameH + Theme.S(4), width, Look.LineHeight(Fonts.CardText)), Theme.Muted, line);
+                new Rectangle(left, y, width, textH), Theme.Muted, line);
+            if (!HasDevices)
+            {
+                link = Rectangle.Empty;
+                return;
+            }
+
+            // The device line, and below it the devices when it's open.
+            y += textH + Theme.S(8);
+            string text = DevicesText();
+            Size size = TextRenderer.MeasureText(g, text, Fonts.CardText, new Size(width, textH), line);
+            link = new Rectangle(left, y, Math.Min(width, size.Width), textH);
+            TextRenderer.DrawText(g, text, Fonts.CardText, link, Theme.AccentLight, line);
+            if (!Open) return;
+            y += Theme.S(LinkHeight) + Theme.S(2);
+            float small = Theme.S(7);
+            foreach (Device d in p.Devices)
+            {
+                using (var b = new SolidBrush(d.Connected ? Theme.GreenLight : Theme.Faint))
+                    g.FillEllipse(b, left + Theme.S(2), y + (textH - small) / 2f, small, small);
+                string when = d.Connected
+                    ? "connected " + (d.ConnectedSince.HasValue ? Pretty.ConnectedFor(d.ConnectedSince.Value) : "now")
+                    : d.LastSeen.HasValue ? "last seen " + Pretty.Ago(d.LastSeen.Value) : "";
+                DeviceLine(g, left, y, width, textH, d.Name, new[] { d.Os, d.App, when });
+                y += Theme.S(DeviceHeight);
+            }
+            if (p.OtherApp)
+            {
+                using (var b = new SolidBrush(Theme.GreenLight))
+                    g.FillEllipse(b, left + Theme.S(2), y + (textH - small) / 2f, small, small);
+                DeviceLine(g, left, y, width, textH, "Another app", new[] { "v2rayNG, Hiddify or similar: they don't say which device, or how many" });
+            }
+        }
+
+        // "Name  ·  Windows 11 · Nevatch 1.5.0 · connected for 5 min", the name brighter.
+        static void DeviceLine(Graphics g, int left, int y, int width, int h, string name, string[] details)
+        {
+            const TextFormatFlags line = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
+            int x = left + Theme.S(18);
+            int nameW = Math.Min(width - Theme.S(18), TextRenderer.MeasureText(g, name, Fonts.CardText, new Size(width, h), line).Width);
+            TextRenderer.DrawText(g, name, Fonts.CardText, new Rectangle(x, y, nameW, h), Theme.Text, line);
+            string rest = string.Join(" · ", details.Where(s => !string.IsNullOrEmpty(s)).ToArray());
+            int restX = x + nameW + Theme.S(4);
+            if (rest.Length > 0 && restX < left + width)
+                TextRenderer.DrawText(g, "·  " + rest, Fonts.CardText, new Rectangle(restX, y, left + width - restX, h), Theme.Muted, line);
         }
     }
 

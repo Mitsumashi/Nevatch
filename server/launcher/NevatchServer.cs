@@ -349,6 +349,10 @@ namespace Nevatch.Server
             Tray.Text = "Nevatch Server: " + (next == State.Running ? "running, " + (connected.Length == 0 ? "nobody" : connected.Length.ToString()) + " connected"
                 : next == State.Stopped ? "stopped" : "busy");
             TrayGreen = next == State.Running && connected.Length > 0;
+            // The health card at the bottom of the sidebar: green running, orange busy, red stopped.
+            SetPresence(next == State.Running ? Theme.Green : next == State.Stopped ? Theme.Red : Theme.Orange, "Server",
+                next == State.Running ? "Running, " + (connected.Length == 0 ? "nobody" : connected.Length.ToString()) + " connected"
+                : next == State.Stopped ? "Stopped" : next == State.Starting ? "Starting…" : "Stopping…");
             if (next != wasState) serverConsole.SetRunning(next == State.Running);
         }
 

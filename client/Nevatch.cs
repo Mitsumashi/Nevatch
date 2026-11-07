@@ -557,6 +557,50 @@ namespace Nevatch
         }
     }
 
+    // What the pings tell the server about this PC, so its People page can list each person's devices:
+    // a random id kept in settings.txt, the PC's name, Windows version and Nevatch version.
+    public static class ThisDevice
+    {
+        static string query;
+
+        public static string Query
+        {
+            get
+            {
+                if (query == null)
+                {
+                    string id = Settings.Get("device");
+                    if (id == null || !Regex.IsMatch(id, "^[0-9a-f]{16}$"))
+                    {
+                        id = Guid.NewGuid().ToString("N").Substring(0, 16);
+                        try { Settings.Set("device", id); } catch { }
+                    }
+                    Version v = Assembly.GetExecutingAssembly().GetName().Version;
+                    string version = v.Major + "." + v.Minor + "." + v.Build;
+                    query = "&dev=" + id + "&dn=" + Uri.EscapeDataString(Environment.MachineName) +
+                        "&os=" + Uri.EscapeDataString(WindowsName()) + "&app=" + Uri.EscapeDataString("Nevatch " + version);
+                }
+                return query;
+            }
+        }
+
+        // Windows 11 still calls itself Windows 10 in the registry; its build number tells them apart.
+        static string WindowsName()
+        {
+            try
+            {
+                using (RegistryKey k = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion"))
+                {
+                    int build;
+                    if (k != null && int.TryParse(k.GetValue("CurrentBuildNumber") as string, out build))
+                        return build >= 22000 ? "Windows 11" : build >= 10240 ? "Windows 10" : "Windows";
+                }
+            }
+            catch { }
+            return "Windows";
+        }
+    }
+
     public class Server
     {
         public readonly string Link;
@@ -1681,7 +1725,7 @@ namespace Nevatch
 
         void Request(Socket s, string report)
         {
-            s.Send(Encoding.ASCII.GetBytes("GET /ping?id=" + Uri.EscapeDataString(id) + report + " HTTP/1.1\r\nHost: " + Updater.Host + "\r\n\r\n"));
+            s.Send(Encoding.ASCII.GetBytes("GET /ping?id=" + Uri.EscapeDataString(id) + ThisDevice.Query + report + " HTTP/1.1\r\nHost: " + Updater.Host + "\r\n\r\n"));
             // Headers up to the blank line, then Content-Length bytes of body.
             var head = new StringBuilder();
             while (!head.ToString().EndsWith("\r\n\r\n"))
@@ -1838,9 +1882,9 @@ namespace Nevatch
 
         const string AutostartName = "Nevatch";
         const int AppsPage = 1, ServersPage = 3, LogPageIndex = 4; // sidebar: Home, Apps, Lag, Servers, Log, Settings, Monitor, About
-        // After a break: the first try after 2 s (most breaks are short), then every 10 s, for at most 10 minutes.
-        const int FirstRetry = 2, RetryEvery = 10;
-        static readonly TimeSpan GiveUpAfter = TimeSpan.FromMinutes(10);
+        // After a break Nevatch never gives up, but tries less often the longer it lasts: the first try after 2 s
+        // (most breaks are short), every 10 s for the first 2 minutes, every 30 s up to 10 minutes, then every 5 minutes.
+        const int FirstRetry = 2;
         const int PoorMs = 250, SteadyMs = 200; // usual ping above which the connection counts as poor / steady again
 
         readonly XrayCore core = new XrayCore();
@@ -1886,7 +1930,7 @@ namespace Nevatch
         DateTime lastUpdateCheck = DateTime.MinValue;
         bool updating;
         bool poor; // connected, but the last seconds had lost answers or a high ping (orange)
-        bool gaveUp; // reconnecting ran out of time; it starts again when the network comes back
+        bool probing; // a reconnect try is checking whether the server answers at all, before starting Xray
         bool startupConnect; // the connect Nevatch starts by itself: if it fails, it keeps trying like after a break
 
         public MainForm(bool startMinimized, bool connectNow, bool updated) : base("Nevatch", "Nevatch", "")
@@ -1908,7 +1952,9 @@ namespace Nevatch
             var servers = new Page("Servers");
             var add = new OutlineButton { Text = "Add key" };
             add.Click += (s, e) => AddKey();
-            servers.Add(add, 44, 150);
+            var phone = new OutlineButton { Text = "Use on phone" };
+            phone.Click += (s, e) => ShowPhoneQr();
+            servers.Add(new ButtonRow(add, phone), 44);
             servers.Add(serverList, -1);
 
             var apps = new Page("What uses the VPN");
@@ -1985,7 +2031,6 @@ namespace Nevatch
                 {
                     lastAlive = DateTime.Now;
                     if (state == State.Reconnecting) RetrySoon(5);
-                    else if (gaveUp && state == State.Disconnected) ResumeRetrying("The PC woke from sleep.", 5);
                 });
             };
             // When Wi-Fi or the cable comes back, try again right away instead of waiting out the countdown.
@@ -1997,7 +2042,6 @@ namespace Nevatch
                     BeginInvoke((MethodInvoker)delegate
                     {
                         if (state == State.Reconnecting) RetrySoon(2);
-                        else if (gaveUp && state == State.Disconnected) ResumeRetrying("The network came back.", 2);
                     });
                 }
                 catch { }
@@ -2078,23 +2122,23 @@ namespace Nevatch
                 case State.Connected:
                     hero.Set(HeroMode.On, "Connected", message ?? "Your connection is protected.", isError);
                     connect.SetLook(Glyph.Stop, "Disconnect", Theme.SlateLight, Theme.Slate);
-                    ShowPresence(isError ? Theme.Yellow : poor ? Theme.Orange : Theme.Green,
+                    ShowPresence(isError || poor ? Theme.Orange : Theme.Green,
                         isError ? "Connected, with problems" : poor ? "Connected, unstable" : "Connected");
                     break;
                 case State.Connecting:
                     hero.Set(HeroMode.Busy, retryAttempt > 0 ? "Reconnecting…" : "Connecting…", message ?? "One moment…", isError);
                     connect.SetLook(null, "Please wait…", Theme.AccentLight, Theme.AccentDark);
-                    ShowPresence(Theme.Yellow, retryAttempt > 0 ? "Reconnecting…" : "Connecting…");
+                    ShowPresence(Theme.Orange, retryAttempt > 0 ? "Reconnecting…" : "Connecting…");
                     break;
                 case State.Reconnecting:
                     hero.Set(HeroMode.Busy, "Reconnecting…", message, isError);
                     connect.SetLook(Glyph.Stop, "Stop trying", Theme.SlateLight, Theme.Slate);
-                    ShowPresence(Theme.Yellow, "Reconnecting…");
+                    ShowPresence(Theme.Orange, "Reconnecting…");
                     break;
                 default:
                     hero.Set(isError ? HeroMode.Error : HeroMode.Off, "Disconnected", message ?? "Your connection is not protected.", isError);
                     connect.SetLook(Glyph.Play, "Connect", Theme.AccentLight, Theme.AccentDark);
-                    ShowPresence(isError ? Theme.Red : Theme.SlateLight, "Not connected");
+                    ShowPresence(Theme.Red, "Not connected");
                     break;
             }
             connect.Enabled = next != State.Connecting;
@@ -2110,7 +2154,7 @@ namespace Nevatch
                 (state == State.Connected ? core.SocksPort.ToString() : "10808") + ".");
         }
 
-        Color presenceDot = Theme.SlateLight;
+        Color presenceDot = Theme.Red;
         string presenceText = "Not connected", presenceName = "Nevatch";
 
         // The status panel at the bottom of the sidebar: the server's name and how the connection is.
@@ -2206,7 +2250,6 @@ namespace Nevatch
         void Toggle()
         {
             if (state == State.Connecting) return;
-            gaveUp = false;
             if (state == State.Reconnecting)
             {
                 core.Note("Stopped reconnecting.");
@@ -2398,8 +2441,9 @@ namespace Nevatch
             ScheduleRetry(reason);
         }
 
-        // Tears the connection down and tries again: after 2 s, then every 10 s. After 10 minutes without success
-        // it stops (Disconnected), and starts over by itself when the network comes back or the PC wakes up.
+        // Tears the connection down and tries again, never giving up: after 2 s, then every 10 s for the first
+        // 2 minutes, every 30 s up to 10 minutes, then every 5 minutes. Each try first checks cheaply whether the
+        // server answers at all (see RetryTick), so a long outage costs almost nothing.
         void ScheduleRetry(string reason)
         {
             lag.Stop();
@@ -2412,55 +2456,30 @@ namespace Nevatch
                 if (!Visible)
                     Notify("Connection lost", reason + " Reconnecting automatically.", ToastKind.Error, 8000);
             }
-            else if (DateTime.Now - brokeAt >= GiveUpAfter)
-            {
-                RanOutOfTime(reason);
-                return;
-            }
             retryAttempt++;
             retryReason = reason;
-            int delay = retryAttempt == 1 ? FirstRetry : RetryEvery;
+            TimeSpan broken = DateTime.Now - brokeAt;
+            int delay = retryAttempt == 1 ? FirstRetry :
+                        broken < TimeSpan.FromMinutes(2) ? 10 :
+                        broken < TimeSpan.FromMinutes(10) ? 30 : 300;
             retryAt = DateTime.Now.AddSeconds(delay);
-            core.Note("Connection lost: " + reason + " Trying again in " + delay + " s (try " + retryAttempt + ").");
+            core.Note("Connection lost: " + reason + " Trying again in " + Wait(delay) + " (try " + retryAttempt + ").");
             ShowNotice(Theme.RedDark, "Connection lost: " + reason, "Reconnect now", () => RetrySoon(0));
             ShowRetry();
             retryTimer.Start();
         }
 
+        // "8 s", or "4 min" from a minute up.
+        static string Wait(int seconds)
+        {
+            return seconds < 60 ? seconds + " s" : (int)Math.Ceiling(seconds / 60.0) + " min";
+        }
+
         void ShowRetry()
         {
             int left = Math.Max(0, (int)Math.Ceiling((retryAt - DateTime.Now).TotalSeconds));
-            int minutes = Math.Max(1, (int)Math.Ceiling((brokeAt + GiveUpAfter - DateTime.Now).TotalMinutes));
-            SetState(State.Reconnecting, "Trying again in " + left + " s" + (retryAttempt > 1 ? " (try " + retryAttempt + ")" : "") +
-                " · stops in " + minutes + " min. Internet works without the VPN meanwhile.", false);
-        }
-
-        // Reconnecting went on for 10 minutes without success: stop, and wait for the network to come back.
-        void RanOutOfTime(string reason)
-        {
-            StopRetrying();
-            gaveUp = true;
-            core.Note("Stopped reconnecting after " + (int)GiveUpAfter.TotalMinutes + " minutes (last problem: " + reason.TrimEnd('.') +
-                "). Nevatch tries again by itself when the network comes back.");
-            SetState(State.Disconnected, "Could not reconnect for " + (int)GiveUpAfter.TotalMinutes + " minutes. Click Connect to try again.", true);
-            ShowNotice(Theme.RedDark, "Stopped reconnecting: " + reason, "Try again", () => { if (state == State.Disconnected) Toggle(); });
-            if (!Visible)
-                Notify("Nevatch stopped reconnecting", "The server didn't answer for " + (int)GiveUpAfter.TotalMinutes +
-                    " minutes. Open Nevatch and click Connect to try again.", ToastKind.Error, 10000);
-        }
-
-        // After giving up: the network came back or the PC woke up, so start a new round of tries.
-        void ResumeRetrying(string why, int seconds)
-        {
-            gaveUp = false;
-            core.Note(why + " Trying to reconnect.");
-            HideNotice();
-            brokeAt = DateTime.Now;
-            retryAttempt = 1;
-            retryReason = why;
-            retryAt = DateTime.Now.AddSeconds(seconds);
-            ShowRetry();
-            retryTimer.Start();
+            SetState(State.Reconnecting, "Trying again in " + Wait(left) + (retryAttempt > 1 ? " (try " + retryAttempt + ")" : "") +
+                ". Internet works without the VPN meanwhile.", false);
         }
 
         // Once a second while connected: the live ping badge on Home, and orange when the connection is poor.
@@ -2498,12 +2517,55 @@ namespace Nevatch
                           : "The connection is steady again (" + usual + " ms).");
         }
 
-        void RetryTick()
+        async void RetryTick()
         {
             if (state != State.Reconnecting) { retryTimer.Stop(); return; }
+            if (probing) return; // a try is already under way
             if (DateTime.Now < retryAt) { ShowRetry(); return; }
             retryTimer.Stop();
+            // First a plain TCP connect to the server: while it is down, a try costs only that, and Xray,
+            // the network adapter and the proxy setting stay untouched.
+            Server server = ServerList.Current();
+            if (server != null)
+            {
+                int attempt = retryAttempt;
+                string problem;
+                probing = true;
+                try
+                {
+                    SetState(State.Reconnecting, "Checking whether " + server.Key.Host + " answers…" +
+                        (attempt > 1 ? " (try " + attempt + ")" : ""), false);
+                    VlessKey key = server.Key;
+                    problem = await Task.Run(() => Probe(key));
+                }
+                finally
+                {
+                    probing = false;
+                }
+                if (state != State.Reconnecting || retryAttempt != attempt) return; // stopped, or connected by hand
+                if (problem != null) { ScheduleRetry(problem); return; }
+            }
             Connect(true);
+        }
+
+        // Whether the server takes a connection at all: null if it does, otherwise a short reason.
+        static string Probe(VlessKey key)
+        {
+            try
+            {
+                using (var client = new TcpClient())
+                {
+                    if (!client.ConnectAsync(key.Host, key.Port).Wait(TimeSpan.FromSeconds(5)))
+                        return "The server " + key.Host + " didn't answer within 5 s.";
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                var all = ex as AggregateException;
+                if (all != null && all.InnerException != null) ex = all.InnerException;
+                return "Could not reach " + key.Host + " (" + Describe(ex) + ").";
+            }
         }
 
         // Moves the next try closer (network came back, woke from sleep, "Reconnect now").
@@ -2534,7 +2596,6 @@ namespace Nevatch
         // The connection works again (or worked the first time): clears the reconnecting state and the red bar.
         void Reconnected()
         {
-            gaveUp = false;
             if (retryAttempt > 0)
             {
                 int took = (int)(DateTime.Now - brokeAt).TotalSeconds;
@@ -2678,6 +2739,19 @@ namespace Nevatch
             if (AskForKey() != null) Reconnect();
         }
 
+        // The current key as a QR code, so the phone app can scan it off the screen.
+        void ShowPhoneQr()
+        {
+            Server current = ServerList.Current();
+            if (current == null)
+            {
+                MessageBox.Show(this, "Add your key first: click Add key and paste the key you received.", "Nevatch",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            using (var dialog = new PhoneQrDialog(current)) dialog.ShowDialog(this);
+        }
+
         void PickServer(Server server)
         {
             Server current = ServerList.Current();
@@ -2785,6 +2859,66 @@ namespace Nevatch
             CancelButton = cancel;
             label.ForeColor = Theme.Text;
             Dark.Dialog(this);
+        }
+    }
+
+    // The key as a QR code for the phone app: dark on white with a quiet zone, as phone scanners expect.
+    public class PhoneQrDialog : Form
+    {
+        readonly bool[,] modules;
+        readonly Rectangle code;
+
+        public PhoneQrDialog(Server server)
+        {
+            modules = Qr.Encode(server.Link);
+            AutoScaleMode = AutoScaleMode.None;
+            Text = "Use on your phone";
+            Icon = Art.ShieldIcon(Theme.S(32));
+            Font = new Font("Segoe UI", 9.75F);
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = MinimizeBox = false;
+            StartPosition = FormStartPosition.CenterParent;
+
+            int full = modules.GetLength(0) + 8;
+            int module = Math.Max(3, Theme.S(320) / full), side = module * full;
+            int pad = Theme.S(20), width = Math.Max(side, Theme.S(360)) + pad * 2;
+            var title = new Label
+            {
+                Text = "Scan this with your phone", AutoSize = false, Font = new Font("Segoe UI Semibold", 12F),
+                Bounds = new Rectangle(pad, Theme.S(16), width - pad * 2, Theme.S(28)), ForeColor = Theme.Text,
+            };
+            var hint = new Label
+            {
+                Text = "Open the Nevatch app on your phone and tap Scan QR code. v2rayNG, Hiddify and Streisand can scan it too.",
+                AutoSize = false, ForeColor = Theme.Muted, Bounds = new Rectangle(pad, Theme.S(48), width - pad * 2, Theme.S(64)),
+            };
+            code = new Rectangle((width - side) / 2, Theme.S(118), side, side);
+            var note = new Label
+            {
+                Text = "Key for " + server.Title + ". Keep it to yourself: anyone who scans it can use your connection.",
+                AutoSize = false, ForeColor = Theme.Muted, Bounds = new Rectangle(pad, code.Bottom + Theme.S(12), width - pad * 2, Theme.S(40)),
+            };
+            var done = new Button
+            {
+                Text = "Done", DialogResult = DialogResult.OK,
+                Bounds = new Rectangle(width - pad - Theme.S(110), note.Bottom + Theme.S(8), Theme.S(110), Theme.S(34)),
+            };
+            Controls.AddRange(new Control[] { title, hint, note, done });
+            AcceptButton = CancelButton = done;
+            ClientSize = new Size(width, done.Bottom + Theme.S(16));
+            DoubleBuffered = true;
+            Dark.Dialog(this);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            Graphics g = e.Graphics;
+            g.FillRectangle(Brushes.White, code);
+            int n = modules.GetLength(0), module = code.Width / (n + 8);
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                    if (modules[y, x]) g.FillRectangle(Brushes.Black, code.X + (x + 4) * module, code.Y + (y + 4) * module, module, module);
         }
     }
 

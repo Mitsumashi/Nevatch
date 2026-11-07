@@ -3,6 +3,28 @@
 The version lives in `VERSION`; both programs and the server read it from there. To release: raise it here and in
 `VERSION`, then run `release.cmd`. Updates reach everyone by file hash, so the number is for people, not the updater.
 
+## 1.5.3 — 2026-11-07
+
+**Nevatch for Android** (new)
+- `Nevatch-Android-<version>.apk`: the Nevatch app for Android phones. Paste the key or scan its QR code, then
+  tap Connect.
+
+**Nevatch**
+- A cleaner sidebar: the name at the top is gone, and the status at the bottom is a simple card with a health
+  bar: green when connected, orange when unstable or reconnecting, red when not connected.
+- *Use on phone* on the Servers page shows your key as a QR code. Scan it with the Nevatch app on your phone (or
+  v2rayNG, Hiddify, Streisand) and the phone is set up too.
+- Tells the server which device it runs on (the PC's name, Windows version and Nevatch version), for the server's
+  device list.
+- When the connection breaks, Nevatch no longer gives up after 10 minutes. It keeps trying, less often the longer the
+  outage lasts: every 10 s, then every 30 s, then every 5 minutes. While the server is down, each try is only a
+  quick check whether it answers, so waiting costs almost no battery.
+
+**Nevatch Server**
+- People shows how many devices each person has connected. Click it to see each device: its name, system, app
+  version, and when it was connected or last seen. Phone apps like v2rayNG don't say which device they run on;
+  they show up as *Another app*.
+
 ## 1.4.2 — 2026-11-07
 
 **Nevatch**

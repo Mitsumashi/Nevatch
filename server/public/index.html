@@ -95,6 +95,10 @@
 
   .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 8px; font-size: 14px; max-width: calc(100% - 32px); }
   @media (max-width: 560px) { .person .actions { width: 100%; } }
+  button.link { background: none; border: 0; padding: 0; color: var(--accent); font-size: inherit; cursor: pointer; }
+  .devices { list-style: none; margin: 4px 0 0; padding: 10px 0 0; border-top: 1px solid var(--line); width: 100%; display: grid; gap: 8px; }
+  .devices li { display: flex; gap: 10px; align-items: baseline; }
+  .devices .dname { font-size: 14px; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -328,10 +332,21 @@ function renderPeople(s) {
       : u.lastActive ? `Not connected · last active ${ago(u.lastActive)}`
       : 'Never connected';
     const noHost = !s.settings.publicHost;
+    const devices = u.devices || [];
+    const live = devices.filter(d => d.connected).length + (u.otherApp ? 1 : 0);
+    const open = openDevices.has(u.id);
+    const count = !u.enabled || (!devices.length && !u.otherApp) ? null
+      : live ? `${live}${u.otherApp ? '+' : ''} device${live === 1 && !u.otherApp ? '' : 's'} connected`
+      : `${devices.length} device${devices.length === 1 ? '' : 's'}`;
     return el('div', { className: `person${u.enabled ? '' : ' off'}${u.connected ? ' on' : ''}` },
       el('div', { className: 'who' },
         el('div', { className: 'name' }, el('span', { className: `dot${u.connected ? ' on' : ''}` }), u.name),
-        el('div', { className: 'meta' }, el('span', { className: 'state' }, state), ` · ↓ ${bytes(u.down)} · ↑ ${bytes(u.up)}`)),
+        el('div', { className: 'meta' }, el('span', { className: 'state' }, state), ` · ↓ ${bytes(u.down)} · ↑ ${bytes(u.up)}`,
+          count && ' · ',
+          count && el('button', {
+            className: 'link', 'aria-expanded': String(open),
+            onclick: () => { open ? openDevices.delete(u.id) : openDevices.add(u.id); renderPeople(s); },
+          }, `${count} ${open ? '▾' : '▸'}`))),
       el('div', { className: 'actions' },
         el('button', {
           disabled: noHost, title: 'For phone apps like Hiddify, or to paste into Nevatch',
@@ -345,8 +360,22 @@ function renderPeople(s) {
           className: 'danger',
           onclick: () => confirm(`Remove ${u.name}? Their key stops working immediately.`) &&
             act(api('DELETE', `/api/users/${u.id}`), `${u.name} removed`),
-        }, 'Remove')));
+        }, 'Remove')),
+      count && open && deviceList(devices, u.otherApp));
   }));
+}
+
+const openDevices = new Set(); // people whose device list is open; kept while the list re-renders
+
+function deviceList(devices, otherApp) {
+  const row = (on, name, detail) => el('li', {},
+    el('span', { className: `dot${on ? ' on' : ''}` }),
+    el('div', {}, el('div', { className: 'dname' }, name), el('div', { className: 'meta' }, detail)));
+  return el('ul', { className: 'devices' },
+    ...devices.map(d => row(d.connected, d.name,
+      [d.os, d.app, d.connected ? `connected ${connectedFor(d.connectedSince)}` : `last seen ${ago(d.lastSeen || d.firstSeen)}`]
+        .filter(Boolean).join(' · '))),
+    otherApp && row(true, 'Another app', 'v2rayNG, Hiddify or similar: they don\'t say which device, or how many'));
 }
 
 // ---------- lag ----------

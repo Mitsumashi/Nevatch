@@ -20,6 +20,7 @@ Go to the [**Releases**](../../releases/latest) page and download:
 
 - **`Nevatch-Server-<version>.exe`**: for you (the server).
 - **`Nevatch-<version>.exe`**: for your friends (the app).
+- **`Nevatch-Android-<version>.apk`**: the same app for your friends' Android phones.
 
 ## Step 2: Start the server
 
@@ -59,7 +60,9 @@ Send your friend these steps:
 3. Click **Add key** and paste the key.
 4. Click **Connect**. The shield turns green. Done!
 
-On a phone? Paste the key into a free app: **Hiddify** or **v2rayNG** (Android), or **Streisand** (iPhone).
+On an Android phone? Install **`Nevatch-Android-<version>.apk`** and paste the key, or scan it: on the PC, Nevatch's
+*Servers* page has **Use on phone**, which shows the key as a QR code. On an iPhone, use the free app **Streisand**
+(it can scan the same QR code).
 
 ---
 

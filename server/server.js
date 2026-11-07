@@ -236,9 +236,76 @@ function isConnected(user, now) {
   return !!user.lastActive && now - Date.parse(user.lastActive) < ACTIVE_MS;
 }
 
+// ---------- devices ----------
+// Each Nevatch (1.5 and newer, Windows and Android) sends along with its pings a random id it keeps per install,
+// plus the device's name, OS and app version. Each person's devices are kept in state.json (user.devices);
+// older Nevatch versions count as one device without details. Phone apps like v2rayNG don't ping at all.
+
+const MAX_DEVICES = 20; // per person; the longest unseen go first
+const devicePing = new Map(); // `${user id}/${device id}` -> time of its last ping
+const deviceSince = new Map(); // `${user id}/${device id}` -> since when it's connected
+
+const cleanText = (v, fallback) => String(v || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 60) || fallback;
+
+function notePing(user, params) {
+  const now = Date.now();
+  const raw = String(params.get('dev') || '');
+  const id = /^[0-9a-z-]{4,40}$/i.test(raw) ? raw.toLowerCase() : 'older';
+  if (!Array.isArray(user.devices)) user.devices = [];
+  let device = user.devices.find(d => d.id === id);
+  const fresh = !device;
+  if (fresh) {
+    device = { id, firstSeen: new Date(now).toISOString() };
+    user.devices.push(device);
+    user.devices.sort((a, b) => Date.parse(b.lastSeen || b.firstSeen) - Date.parse(a.lastSeen || a.firstSeen));
+    user.devices.length = Math.min(user.devices.length, MAX_DEVICES); // the new one sorts first, so it stays
+  }
+  const older = id === 'older';
+  const info = {
+    name: cleanText(params.get('dn'), older ? 'Nevatch (older version)' : 'Unknown device'),
+    os: cleanText(params.get('os'), ''),
+    app: cleanText(params.get('app'), older ? 'Nevatch 1.4 or older' : ''),
+  };
+  const changed = fresh || Object.keys(info).some(k => device[k] !== info[k]);
+  Object.assign(device, info, { lastSeen: new Date(now).toISOString() });
+  devicePing.set(`${user.id}/${id}`, now);
+  if (changed) saveState();
+}
+
+// A person's devices for the console, connected ones first. "otherApp": traffic without pings, from a phone app
+// like v2rayNG or Hiddify (or several; they can't be told apart).
+function devicesOf(user, now) {
+  const list = (user.devices || []).map(d => {
+    const key = `${user.id}/${d.id}`;
+    const connected = user.enabled && deviceSince.has(key);
+    return { ...d, connected, connectedSince: connected ? new Date(deviceSince.get(key)).toISOString() : null };
+  });
+  list.sort((a, b) => (b.connected - a.connected) || Date.parse(b.lastSeen || 0) - Date.parse(a.lastSeen || 0));
+  const otherApp = connectedSince.has(user.id) && !list.some(d => d.connected) && !!user.lastActive &&
+    now - Date.parse(user.lastActive) < ACTIVE_MS;
+  return { devices: list, otherApp };
+}
+
+function checkDevices(now) {
+  let changed = false;
+  for (const u of state.users) {
+    for (const d of u.devices || []) {
+      const key = `${u.id}/${d.id}`, pinged = devicePing.get(key);
+      const on = u.enabled && !!pinged && now - pinged < PING_GONE_MS;
+      if (on && !deviceSince.has(key)) deviceSince.set(key, now);
+      else if (!on && deviceSince.has(key)) {
+        deviceSince.delete(key);
+        changed = true; // keeps its last seen time in state.json
+      }
+    }
+  }
+  if (changed) saveState();
+}
+
 // Logs who comes and goes. Nevatch Server.exe reads the "@connected" line to show who's connected right now.
 function checkConnected() {
   const now = Date.now();
+  checkDevices(now);
   for (const u of state.users) {
     const on = isConnected(u, now);
     if (on && !connectedSince.has(u.id)) {
@@ -293,6 +360,7 @@ const updates = http.createServer((req, res) => {
     // and sends along what it measured last time (ms through the VPN and without it, -1 = no answer).
     if (user && url.pathname === '/ping') {
       lastPing.set(user.id, Date.now());
+      notePing(user, url.searchParams);
       const ms = name => {
         const n = Number(url.searchParams.get(name));
         return url.searchParams.has(name) && Number.isInteger(n) && n >= -1 && n <= 60000 ? n : null;
@@ -341,6 +409,7 @@ function localIps() {
 
 function statusPayload() {
   checkConnected();
+  const now = Date.now();
   return {
     version: VERSION,
     portFixed: !!FIXED_PORT,
@@ -354,6 +423,7 @@ function statusPayload() {
       connected: connectedSince.has(u.id),
       connectedSince: connectedSince.has(u.id) ? new Date(connectedSince.get(u.id)).toISOString() : null,
       link: state.settings.publicHost ? xray.shareLink(state, u) : null,
+      ...devicesOf(u, now),
     })),
     logs: logs.slice(-150),
     lag: lag.snapshot(),

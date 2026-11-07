@@ -585,11 +585,11 @@ namespace Nevatch.Ui
         }
     }
 
-    // Discord-like: a header with the logo and name, a channel list (the pages), and a status panel at the bottom.
+    // The list of pages under a small category label, and a health card at the bottom.
     class Sidebar : Panel
     {
-        static int RailWidth { get { return 0; } } // no logo rail any more; the logo sits in the header
-        static int HeaderHeight { get { return Theme.S(64); } } // same as a page's title bar, so the two lines meet
+        static int RailWidth { get { return 0; } } // no logo rail any more
+        static int HeaderHeight { get { return Theme.S(4); } } // no name header any more, just a little room at the top
         static int PresenceHeight { get { return Theme.S(60); } }
 
         readonly string brand, tagline;
@@ -640,38 +640,24 @@ namespace Nevatch.Ui
             Art.Smooth(g);
             int rail = RailWidth;
 
-            // Header: the logo in a small rounded blurple tile, the name next to it, and a shadow line under it.
-            float tile = Theme.S(30), tx = Theme.S(14), ty = (HeaderHeight - tile) / 2f;
-            using (GraphicsPath p = Art.RoundRect(new RectangleF(tx, ty, tile, tile), Theme.S(9)))
-            using (var b = new LinearGradientBrush(new RectangleF(tx, ty, tile, tile), Theme.AccentLight, Theme.AccentDark, 70f))
-                g.FillPath(b, p);
-            float sh = tile * 0.64f, sw = sh * 0.86f;
-            Art.DrawShield(g, new RectangleF(tx + (tile - sw) / 2, ty + (tile - sh) / 2, sw, sh), Color.White, Color.FromArgb(214, 218, 255));
-            int nameLeft = (int)(tx + tile + Theme.S(10));
-            var header = new Rectangle(nameLeft, 0, Width - nameLeft - Theme.S(8), HeaderHeight);
-            TextRenderer.DrawText(g, brand, Fonts.SidebarHeader, header, Theme.Text,
-                TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
-            using (var b = new SolidBrush(Theme.CardBorder)) g.FillRectangle(b, rail, HeaderHeight - Theme.S(1), Width - rail, Math.Max(1, Theme.S(1)));
-            using (var b = new SolidBrush(Color.FromArgb(18, 0, 0, 0))) g.FillRectangle(b, rail, HeaderHeight, Width - rail, Theme.S(2)); // the page header's shadow too
-
             TextRenderer.DrawText(g, tagline.ToUpperInvariant(), Fonts.Category,
                 new Rectangle(rail + Theme.S(16), HeaderHeight + Theme.S(16), Width - rail - Theme.S(24), Theme.S(18)), Theme.NavText,
                 TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
 
-            // Status panel at the bottom: logo "avatar" with a status dot, a name and a status line.
+            // Health card at the bottom: one solid card, a bar down its left edge in the health color
+            // (green good, orange on the edge, red bad), and the status title and line next to it.
             int top = Height - PresenceHeight;
-            using (var b = new SolidBrush(Theme.PresenceBg)) g.FillRectangle(b, rail, top, Width - rail, PresenceHeight);
-            float av = Theme.S(34), ax = rail + Theme.S(12), ay = top + (PresenceHeight - av) / 2f;
-            using (var b = new SolidBrush(Theme.Accent)) g.FillEllipse(b, ax, ay, av, av);
-            float ah = av * 0.58f, aw = ah * 0.86f;
-            Art.DrawShield(g, new RectangleF(ax + (av - aw) / 2, ay + (av - ah) / 2, aw, ah), Color.White, Color.FromArgb(214, 218, 255));
-            float dot = Theme.S(14), ring = Theme.S(3);
-            using (var b = new SolidBrush(Theme.PresenceBg)) g.FillEllipse(b, ax + av - dot + ring / 2, ay + av - dot + ring / 2, dot, dot);
-            using (var b = new SolidBrush(presenceDot)) g.FillEllipse(b, ax + av - dot + ring * 1.5f, ay + av - dot + ring * 1.5f, dot - ring * 2, dot - ring * 2);
-            int textLeft = (int)(ax + av + Theme.S(10)), textW = Math.Max(10, Width - textLeft - Theme.S(8));
+            int inset = Theme.S(8);
+            var card = new RectangleF(rail + inset, top + inset / 2f, Width - rail - inset * 2, PresenceHeight - inset * 1.5f);
+            using (GraphicsPath p = Art.RoundRect(card, Theme.S(8)))
+            using (var b = new SolidBrush(Theme.PresenceBg)) g.FillPath(b, p);
+            float barW = Theme.S(4), barPad = Theme.S(9);
+            using (GraphicsPath p = Art.RoundRect(new RectangleF(card.X + Theme.S(8), card.Y + barPad, barW, card.Height - barPad * 2), barW / 2))
+            using (var b = new SolidBrush(presenceDot)) g.FillPath(b, p);
+            int textLeft = (int)(card.X + Theme.S(8) + barW + Theme.S(10)), textW = Math.Max(10, (int)card.Right - textLeft - Theme.S(8));
             int line1 = TextRenderer.MeasureText("Ag", Fonts.Presence, new Size(1000, 100), TextFormatFlags.NoPadding).Height;
             int line2 = TextRenderer.MeasureText("Ag", Fonts.PresenceText, new Size(1000, 100), TextFormatFlags.NoPadding).Height;
-            int textTop = top + (PresenceHeight - line1 - line2) / 2;
+            int textTop = (int)(card.Y + (card.Height - line1 - line2) / 2);
             const TextFormatFlags one = TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine;
             TextRenderer.DrawText(g, presenceTitle, Fonts.Presence, new Rectangle(textLeft, textTop, textW, line1), Theme.Text, one);
             TextRenderer.DrawText(g, presenceText, Fonts.PresenceText, new Rectangle(textLeft, textTop + line1, textW, line2), Theme.NavText, one);
@@ -1989,15 +1975,27 @@ namespace Nevatch.Ui
         {
             // ScrollPanel's constructor adds its bar, which lays out before this constructor has made the empty card.
             if (empty == null) { base.OnLayout(e); return; }
-            int h = Theme.S(rowHeight), gap = Theme.S(12);
-            int total = rows.Count * (h + gap);
+            int gap = Theme.S(12), total = 0;
+            var heights = new int[rows.Count];
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var sized = rows[i] as ISizedRow;
+                heights[i] = Theme.S(sized != null ? sized.RowHeight : rowHeight);
+                total += heights[i] + gap;
+            }
             SetContentHeight(total);
             int width = ClientSize.Width - (total > ClientSize.Height ? SlimScrollBar.BarWidth : 0);
             empty.SetBounds(0, 0, width, Theme.S(100));
-            for (int i = 0; i < rows.Count; i++)
-                rows[i].SetBounds(0, i * (h + gap) - ScrollOffset, width, h);
+            for (int i = 0, y = 0; i < rows.Count; y += heights[i] + gap, i++)
+                rows[i].SetBounds(0, y - ScrollOffset, width, heights[i]);
             base.OnLayout(e);
         }
+    }
+
+    // A RowList row that sets its own height (unscaled), for rows that open up; it calls the list's PerformLayout when it changes.
+    public interface ISizedRow
+    {
+        int RowHeight { get; }
     }
 
     // Outline buttons side by side, left to right.
