@@ -1,0 +1,13 @@
+{
+  "name": "friendvpn-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Small VLESS + Reality server with a web console and a Windows client for friends.",
+  "scripts": {
+    "setup": "node setup.js",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

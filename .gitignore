@@ -1,0 +1,20 @@
+# Server keys, people and console password. Never commit these.
+server/data/
+data/
+.env
+
+# Downloaded by `node server/setup.js` (third-party binaries)
+server/bin/
+client/xray/
+client/wintun/
+
+# Build output
+client/obj/
+client/dist/
+server/launcher/obj/
+server/Nevatch Server.exe
+release/
+
+node_modules/
+*.log
+.claude/

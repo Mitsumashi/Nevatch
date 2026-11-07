@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nevatch Console</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1b2030; --muted: #667085; --line: #e3e6eb;
+    --accent: #2563eb; --accent-text: #ffffff; --ok: #15803d; --ok-bg: #e8f6ee; --warn: #b45309; --warn-bg: #fdf3e3;
+    --bad: #b91c1c; --bad-bg: #fdecec; --field: #ffffff; --code: #f1f3f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1117; --card: #161a22; --text: #e5e8ee; --muted: #98a1b2; --line: #272d38;
+      --accent: #5b8cff; --accent-text: #0b1020; --ok: #4ade80; --ok-bg: #12291c; --warn: #fbbf24; --warn-bg: #2b2210;
+      --bad: #f87171; --bad-bg: #2e1515; --field: #0f131a; --code: #0f131a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  [hidden] { display: none !important; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 16px; margin: 0 0 14px; }
+  small, .muted { color: var(--muted); }
+  button, .btn {
+    font: inherit; font-size: 14px; border: 1px solid transparent; border-radius: 8px; padding: 7px 14px;
+    background: var(--accent); color: var(--accent-text); cursor: pointer; text-decoration: none; display: inline-block; white-space: nowrap;
+  }
+  button.ghost, .btn.ghost { background: transparent; color: var(--text); border-color: var(--line); }
+  button.danger { background: transparent; color: var(--bad); border-color: var(--line); }
+  button:disabled { opacity: .55; cursor: default; }
+  input {
+    font: inherit; width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--field); color: var(--text);
+  }
+  input:focus, button:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 16px 40px; }
+  header { display: flex; align-items: center; gap: 12px; padding: 18px 0; }
+  header .spacer { flex: 1; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .pill { font-size: 13px; padding: 3px 10px; border-radius: 999px; font-weight: 600; }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .pill.bad { background: var(--bad-bg); color: var(--bad); }
+  .pill.idle { background: var(--code); color: var(--muted); }
+
+  .center { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+  .login { width: 100%; max-width: 340px; }
+  .login h1 { margin-bottom: 4px; }
+  .login input { margin: 14px 0 10px; }
+  .login button { width: 100%; }
+  .err { color: var(--bad); min-height: 1.4em; margin: 8px 0 0; font-size: 14px; }
+
+  .checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .checklist li { display: flex; gap: 10px; align-items: flex-start; }
+  .mark { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; margin-top: 1px; }
+  .mark.ok { background: var(--ok-bg); color: var(--ok); }
+  .mark.todo { background: var(--warn-bg); color: var(--warn); }
+  .mark.info { background: var(--code); color: var(--muted); }
+  code { background: var(--code); border-radius: 5px; padding: 1px 6px; font-size: 13px; }
+
+  .people { display: grid; gap: 10px; margin-top: 14px; }
+  .person { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .person .who { flex: 1 1 220px; min-width: 0; }
+  .person .name { font-weight: 600; }
+  .person .meta { font-size: 13px; color: var(--muted); }
+  .person .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); vertical-align: 1px; }
+  .dot.on { background: var(--ok); }
+  .person.on { border-color: var(--ok); box-shadow: inset 4px 0 0 var(--ok); }
+  .person.on .state { color: var(--ok); font-weight: 600; }
+  .person.off .name { color: var(--muted); text-decoration: line-through; }
+  .empty { color: var(--muted); padding: 10px 0 0; }
+
+  .settings { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); align-items: end; }
+  .settings label { display: grid; gap: 4px; font-weight: 600; font-size: 14px; }
+  .settings label small { font-weight: 400; }
+  .settings .full { grid-column: 1 / -1; }
+
+  .lag { display: grid; gap: 10px; }
+  .lagrow { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; }
+  .lagrow .name { font-weight: 600; }
+  .lagrow .nums { font-size: 13px; color: var(--muted); }
+  .lagrow svg { width: 100%; height: 56px; display: block; background: var(--code); border-radius: 6px; }
+  .legend { font-size: 12px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; }
+  .key { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: 3px; margin-right: 5px; }
+  .verdict { font-size: 13.5px; }
+  .verdict.ok { color: var(--ok); }
+  .verdict.bad { color: var(--warn); }
+
+  details summary { cursor: pointer; font-weight: 600; }
+  pre { background: var(--code); border-radius: 8px; padding: 12px; font-size: 12.5px; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 12px 0 0; }
+
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 8px; font-size: 14px; max-width: calc(100% - 32px); }
+  @media (max-width: 560px) { .person .actions { width: 100%; } }
+</style>
+</head>
+<body>
+
+<div id="loginView" class="center" hidden>
+  <form id="loginForm" class="card login">
+    <h1>Nevatch</h1>
+    <div class="muted">Console password</div>
+    <input type="password" id="password" autocomplete="current-password" required>
+    <button>Log in</button>
+    <p id="loginError" class="err"></p>
+  </form>
+</div>
+
+<div id="appView" class="wrap" hidden>
+  <header>
+    <h1>Nevatch</h1>
+    <span id="statusPill" class="pill"></span>
+    <span id="connectedPill" class="pill"></span>
+    <span class="spacer"></span>
+    <button id="logout" class="ghost">Log out</button>
+  </header>
+
+  <section class="card">
+    <h2>Setup checklist</h2>
+    <ul id="checklist" class="checklist"></ul>
+  </section>
+
+  <section class="card">
+    <h2>People</h2>
+    <form id="addForm" class="row">
+      <input id="newName" placeholder="Name, e.g. Ivan" maxlength="40" required>
+      <button>Add person</button>
+    </form>
+    <div id="people" class="people"></div>
+  </section>
+
+  <section class="card">
+    <h2>Lag</h2>
+    <div id="lag" class="lag"></div>
+  </section>
+
+  <section class="card">
+    <h2>Server settings</h2>
+    <form id="settingsForm" class="settings">
+      <label class="full">Public address
+        <small>Your home's internet IP, or a dynamic DNS name like myhome.duckdns.org</small>
+        <span class="row"><input id="publicHost" placeholder="e.g. 85.123.45.67"><button type="button" id="detect" class="ghost">Detect</button></span>
+      </label>
+      <label>Port
+        <small>Forward this TCP port on your router</small>
+        <input id="port" type="number" min="1" max="65535">
+      </label>
+      <label>Camouflage site
+        <small>Connections look like visits to this site</small>
+        <input id="sni">
+      </label>
+      <label>Download limit per person
+        <small>Mbit/s; 0 = no limit</small>
+        <input id="downLimit" type="number" min="0" max="10000" step="0.1">
+      </label>
+      <label>Upload limit per person
+        <small>Mbit/s; 0 = no limit</small>
+        <input id="upLimit" type="number" min="0" max="10000" step="0.1">
+      </label>
+      <div class="full row"><button>Save</button><span class="muted">Changing port or camouflage site means everyone needs a new key.</span></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Server log</summary>
+      <pre id="log"></pre>
+      <p><button id="restart" class="ghost">Restart Xray</button></p>
+    </details>
+  </section>
+</div>
+
+<script>
+const $ = sel => document.querySelector(sel);
+let status = null;
+let settingsLoaded = false;
+let pollTimer = null;
+
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
+    else if (k in node) node[k] = v;
+    else node.setAttribute(k, v);
+  }
+  node.append(...children.filter(c => c != null && c !== false));
+  return node;
+}
+
+function toast(text) {
+  const t = el('div', { className: 'toast', role: 'status' }, text);
+  document.body.append(t);
+  setTimeout(() => t.remove(), 2600);
+}
+
+async function api(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401 && url !== '/api/login') { showLogin(); throw new Error('Please log in'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+function bytes(n) {
+  if (!n) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  return `${(n / 1024 ** i).toFixed(i > 1 ? 1 : 0)} ${units[i]}`;
+}
+
+function ago(iso) {
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (s < 90) return 'a minute ago';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} days ago`;
+}
+
+function connectedFor(iso) {
+  const m = Math.floor((Date.now() - Date.parse(iso)) / 60000);
+  return m < 1 ? 'just now' : m < 60 ? `for ${m} min` : `for ${Math.floor(m / 60)} h ${m % 60} min`;
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  // The console is usually opened over plain http on the home network, where the clipboard API is blocked.
+  const ta = el('textarea', { value: text });
+  ta.style.cssText = 'position:fixed;opacity:0';
+  document.body.append(ta);
+  ta.select();
+  const ok = document.execCommand('copy');
+  ta.remove();
+  return ok;
+}
+
+function showLogin() {
+  clearInterval(pollTimer);
+  $('#appView').hidden = true;
+  $('#loginView').hidden = false;
+  $('#password').focus();
+}
+
+async function showApp() {
+  $('#loginView').hidden = true;
+  $('#appView').hidden = false;
+  settingsLoaded = false;
+  await refresh();
+  clearInterval(pollTimer);
+  pollTimer = setInterval(() => refresh().catch(() => {}), 5000);
+}
+
+async function refresh() {
+  render(await api('GET', '/api/status'));
+}
+
+function render(s) {
+  status = s;
+  const pill = $('#statusPill');
+  pill.className = `pill ${s.xray.running ? 'ok' : 'bad'}`;
+  pill.textContent = s.xray.running ? 'Running' : 'Stopped';
+  pill.title = (s.version ? `Nevatch Server ${s.version}` : 'Nevatch Server') + (s.xray.version ? ` · ${s.xray.version}` : '');
+  // Without a password there's no session to end.
+  $('#logout').hidden = s.consoleAccess === 'open';
+  const on = s.users.filter(u => u.connected);
+  const people = $('#connectedPill');
+  people.className = `pill ${on.length ? 'ok' : 'idle'}`;
+  people.textContent = on.length ? `${on.length} connected` : 'Nobody connected';
+  people.title = on.map(u => u.name).join(', ');
+
+  renderChecklist(s);
+  renderPeople(s);
+  renderLag(s);
+
+  if (!settingsLoaded) {
+    $('#publicHost').value = s.settings.publicHost;
+    $('#port').value = s.settings.port;
+    // Under Docker the port is set by VPN_PORT and has to match the published port.
+    $('#port').disabled = !!s.portFixed;
+    if (s.portFixed) $('#port').title = 'Set by VPN_PORT in Docker';
+    $('#sni').value = s.settings.sni;
+    $('#downLimit').value = s.settings.downLimit;
+    $('#upLimit').value = s.settings.upLimit;
+    settingsLoaded = true;
+  }
+
+  const pre = $('#log');
+  const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+  pre.textContent = s.logs.join('\n') || 'Nothing logged yet.';
+  if (atBottom) pre.scrollTop = pre.scrollHeight;
+}
+
+function renderChecklist(s) {
+  const port = s.settings.port;
+  const ip = s.localIps[0] || 'this PC';
+  const item = (state, ...content) =>
+    el('li', {}, el('span', { className: `mark ${state}` }, state === 'ok' ? '✓' : state === 'todo' ? '!' : 'i'), el('div', {}, ...content));
+  $('#checklist').replaceChildren(
+    s.xray.installed
+      ? item(s.xray.running ? 'ok' : 'todo', s.xray.running ? `Xray is running (${s.xray.version || 'version unknown'})` : 'Xray is not running — check the server log below')
+      : item('todo', 'Xray is not installed — run ', el('code', {}, 'node setup.js')),
+    s.settings.publicHost
+      ? item('ok', 'Public address: ', el('code', {}, s.settings.publicHost))
+      : item('todo', 'Set your public address in Server settings (use Detect)'),
+    item('info', 'Router: forward ', el('strong', {}, `TCP port ${port}`), ' to ', el('code', {}, ip),
+      el('br'), el('small', {}, 'Give this PC a fixed local IP in the router (DHCP reservation) so the rule keeps working.')),
+    item('info', 'Windows Firewall: right-click ', el('code', {}, 'allow-firewall.cmd'), ' → Run as administrator',
+      el('br'), el('small', {}, 'Only needed once, and again if you change the port.')),
+    item(s.packageReady ? 'ok' : 'todo', s.packageReady ? 'Nevatch.exe is built, so your friends get updates' : 'Nevatch.exe is not built yet — run node setup.js'),
+  );
+}
+
+function renderPeople(s) {
+  const list = $('#people');
+  if (!s.users.length) {
+    list.replaceChildren(el('div', { className: 'empty' }, 'No one added yet. Add your friend above, then copy their key and send it to them.'));
+    return;
+  }
+  list.replaceChildren(...s.users.map(u => {
+    const state = !u.enabled ? 'Disabled'
+      : u.connected ? `Connected ${connectedFor(u.connectedSince)}`
+      : u.lastActive ? `Not connected · last active ${ago(u.lastActive)}`
+      : 'Never connected';
+    const noHost = !s.settings.publicHost;
+    return el('div', { className: `person${u.enabled ? '' : ' off'}${u.connected ? ' on' : ''}` },
+      el('div', { className: 'who' },
+        el('div', { className: 'name' }, el('span', { className: `dot${u.connected ? ' on' : ''}` }), u.name),
+        el('div', { className: 'meta' }, el('span', { className: 'state' }, state), ` · ↓ ${bytes(u.down)} · ↑ ${bytes(u.up)}`)),
+      el('div', { className: 'actions' },
+        el('button', {
+          disabled: noHost, title: 'For phone apps like Hiddify, or to paste into Nevatch',
+          onclick: async () => toast((await copyText(u.link)) ? `Key for ${u.name} copied` : 'Could not copy'),
+        }, 'Copy key'),
+        el('button', {
+          className: 'ghost',
+          onclick: () => act(api('POST', `/api/users/${u.id}`, { enabled: !u.enabled }), u.enabled ? `${u.name} disabled` : `${u.name} enabled`),
+        }, u.enabled ? 'Disable' : 'Enable'),
+        el('button', {
+          className: 'danger',
+          onclick: () => confirm(`Remove ${u.name}? Their key stops working immediately.`) &&
+            act(api('DELETE', `/api/users/${u.id}`), `${u.name} removed`),
+        }, 'Remove')));
+  }));
+}
+
+// ---------- lag ----------
+// Round trips in ms, oldest first; -1 = no answer. "spike" is how far above usual counts as a lag spike.
+function lagStats(list, spike) {
+  const ok = list.filter(v => v >= 0).sort((a, b) => a - b);
+  const usual = ok.length ? ok[Math.floor(ok.length / 2)] : 0;
+  return {
+    n: list.length, usual, worst: ok.length ? ok[ok.length - 1] : 0,
+    lost: list.length - ok.length, spikes: list.filter(v => v > usual + spike).length, answers: ok.length > 0,
+  };
+}
+
+function describe(st, what) {
+  if (!st.answers) return `${what}: no answer`;
+  return `${what}: usually ${st.usual} ms, worst ${st.worst} ms${st.lost ? `, ${st.lost} without an answer` : ''}`;
+}
+
+// Lines side by side, newest on the right; red marks on top where nothing came back.
+function spark(series, slots) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const top = Math.max(0, ...series.flatMap(s => s.values));
+  const scale = [50, 100, 200, 300, 500, 1000, 2000, 3000].find(s => top <= s) || 3000;
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${slots - 1} 100`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  const title = document.createElementNS(NS, 'title');
+  title.textContent = `Last 2 minutes; the top of the graph is ${scale} ms`;
+  svg.append(title);
+  for (const s of series) {
+    const x0 = slots - s.values.length;
+    let points = [];
+    const flush = () => {
+      if (points.length > 1) {
+        const line = document.createElementNS(NS, 'polyline');
+        line.setAttribute('points', points.join(' '));
+        line.setAttribute('fill', 'none');
+        line.setAttribute('stroke', s.color);
+        line.setAttribute('stroke-width', s.width);
+        line.setAttribute('vector-effect', 'non-scaling-stroke');
+        svg.append(line);
+      }
+      points = [];
+    };
+    s.values.forEach((v, i) => {
+      if (v < 0) {
+        flush();
+        if (s.markLost) {
+          const mark = document.createElementNS(NS, 'rect');
+          Object.entries({ x: x0 + i - 0.4, y: 0, width: 0.8, height: 22, fill: 'var(--bad)' }).forEach(([k, val]) => mark.setAttribute(k, val));
+          svg.append(mark);
+        }
+        return;
+      }
+      points.push(`${x0 + i},${(100 - Math.min(v, scale) / scale * 96).toFixed(1)}`);
+    });
+    flush();
+  }
+  return svg;
+}
+
+function lagRow(name, nums, svg, legend, verdict) {
+  return el('div', { className: 'lagrow' },
+    el('div', { className: 'name' }, name),
+    el('div', { className: 'nums' }, ...nums.flatMap((n, i) => (i ? [el('br'), n] : [n]))),
+    svg,
+    el('div', { className: 'legend' }, ...legend.map(([color, text]) => el('span', {}, el('span', { className: 'key', style: `background:${color}` }), text))),
+    el('div', { className: `verdict ${verdict[0]}` }, verdict[1]));
+}
+
+function renderLag(s) {
+  const lag = s.lag || { self: { router: [], internet: [] }, people: {} };
+  const blue = 'var(--accent)', gray = 'var(--muted)';
+
+  // This PC: a home router normally answers in a few ms, so anything slower is this PC's own connection (Wi-Fi).
+  const router = lagStats(lag.self.router, 100), internet = lagStats(lag.self.internet, 150);
+  const selfBad = router.n >= 5 && (router.usual > 20 || router.spikes >= 3 || router.lost > 2);
+  const selfVerdict = router.n < 5 ? ['', 'Measuring…']
+    : !lag.self.gateway ? ['', 'Could not find your router’s address, so only the internet is checked.']
+    : selfBad ? ['bad', 'This PC’s connection to your router is slow. That’s usually Wi-Fi that’s busy or weak; ' +
+        'a network cable fixes it. Everyone using the VPN feels this.']
+    : internet.usual > 80 || internet.lost > 2 ? ['bad', 'Your router answers quickly, but your internet itself is slow right now ' +
+        '(something big uploading or downloading?).']
+    : ['ok', 'This PC’s connection is fine.'];
+  const rows = [lagRow('This PC (the server)',
+    [describe(router, `To your router${lag.self.gateway ? ` (${lag.self.gateway})` : ''}`), describe(internet, 'To the internet (1.1.1.1)')],
+    spark([{ values: lag.self.internet, color: gray, width: 1.5 }, { values: lag.self.router, color: blue, width: 2.5, markLost: true }], 60),
+    [[blue, 'To your router'], [gray, 'To the internet']], selfVerdict)];
+
+  const names = new Map(s.users.map(u => [u.id, u.name]));
+  for (const [id, p] of Object.entries(lag.people)) {
+    const vpn = lagStats(p.vpn, 200), direct = lagStats(p.direct, 200);
+    // Yandex is close to anyone in Russia, so even a steady 150 ms without the VPN means their connection is slow.
+    const ownLags = direct.answers && (direct.usual > 150 || direct.lost > 2 || direct.spikes >= 3);
+    const vpnLags = vpn.lost > 1 || vpn.spikes >= 3;
+    const verdict = vpn.n < 10 ? ['', 'Measuring…']
+      : ownLags ? ['bad', 'Their own internet is lagging too, even without the VPN: their Wi-Fi or their internet provider.']
+      : vpnLags && selfBad ? ['bad', 'Lagging, and this PC’s own connection is slow too (see above): fix that first.']
+      : vpnLags ? ['bad', 'Their internet and this PC are fine, but the way between you lags: your home upload may be full ' +
+          '(try a lower download limit), or their provider is slowing down foreign connections.']
+      : vpn.usual > 300 ? ['bad', 'Steady, but slow: the way between you is long. Games feel it; browsing is fine.']
+      : ['ok', 'Looks good.'];
+    rows.push(lagRow(names.get(id) || 'Someone',
+      [describe(vpn, 'Through the VPN to this PC'), direct.answers ? describe(direct, 'Their own internet, without the VPN (Yandex)') : 'Their own internet: Yandex didn’t answer, so it isn’t measured.'],
+      spark([{ values: p.direct, color: gray, width: 1.5 }, { values: p.vpn, color: blue, width: 2.5, markLost: true }], 120),
+      [[blue, 'Through the VPN'], [gray, 'Their internet without the VPN']], verdict));
+  }
+  if (!Object.keys(lag.people).length) {
+    rows.push(el('div', { className: 'empty' }, 'Each person’s lag shows up here, live, while they’re connected with Nevatch 1.6 or newer.'));
+  }
+  $('#lag').replaceChildren(...rows);
+}
+
+async function act(promise, message) {
+  try {
+    render(await promise);
+    if (message) toast(message);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('#loginError').textContent = '';
+  try {
+    await api('POST', '/api/login', { password: $('#password').value });
+    $('#password').value = '';
+    await showApp();
+  } catch (err) {
+    $('#loginError').textContent = err.message;
+  }
+});
+
+$('#logout').addEventListener('click', async () => {
+  await api('POST', '/api/logout', {}).catch(() => {});
+  showLogin();
+});
+
+$('#addForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = $('#newName').value;
+  await act(api('POST', '/api/users', { name }), `${name.trim()} added`);
+  $('#newName').value = '';
+});
+
+$('#settingsForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  await act(api('POST', '/api/settings', {
+    publicHost: $('#publicHost').value,
+    port: Number($('#port').value),
+    sni: $('#sni').value,
+    downLimit: Number($('#downLimit').value || 0),
+    upLimit: Number($('#upLimit').value || 0),
+  }), 'Settings saved');
+});
+
+$('#detect').addEventListener('click', async () => {
+  try {
+    const { ip } = await api('POST', '/api/detect-ip', {});
+    $('#publicHost').value = ip;
+    toast('Detected — press Save to keep it');
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+$('#restart').addEventListener('click', () => act(api('POST', '/api/restart', {}), 'Xray restarted'));
+
+showApp().catch(() => showLogin());
+</script>
+</body>
+</html>
