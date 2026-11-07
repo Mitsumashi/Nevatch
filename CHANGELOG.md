@@ -3,6 +3,11 @@
 The version lives in `VERSION`; both programs and the server read it from there. To release: raise it here and in
 `VERSION`, then run `release.cmd`. Updates reach everyone by file hash, so the number is for people, not the updater.
 
+## 1.4.2 — 2026-11-07
+
+**Nevatch**
+- The slogan is gone from the sidebar. The About page now says what Nevatch is.
+
 ## 1.4.1 — 2026-11-07
 
 **Nevatch Server**
