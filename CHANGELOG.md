@@ -3,6 +3,15 @@
 The version lives in `VERSION`; both programs and the server read it from there. To release: raise it here and in
 `VERSION`, then run `release.cmd`. Updates reach everyone by file hash, so the number is for people, not the updater.
 
+## 1.4.1 — 2026-11-07
+
+**Nevatch Server**
+- A clearer Lag page: each card shows the name and a short verdict ("All good.") on one line, the graph, and the
+  latest value of each line. The long "usually / worst" lines and the avg, min, max and jitter numbers are gone.
+- The same for the Lag card in the web console.
+
+The friend's app is the same as in 1.4.0.
+
 ## 1.4.0 — 2026-11-07
 
 **Nevatch Server**

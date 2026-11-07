@@ -80,8 +80,9 @@
 
   .lag { display: grid; gap: 10px; }
   .lagrow { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; }
+  .lagrow .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
   .lagrow .name { font-weight: 600; }
-  .lagrow .nums { font-size: 13px; color: var(--muted); }
+  .legend b { color: var(--text); margin-left: 4px; }
   .lagrow svg { width: 100%; height: 56px; display: block; background: var(--code); border-radius: 6px; }
   .legend { font-size: 12px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; }
   .key { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: 3px; margin-right: 5px; }
@@ -359,11 +360,6 @@ function lagStats(list, spike) {
   };
 }
 
-function describe(st, what) {
-  if (!st.answers) return `${what}: no answer`;
-  return `${what}: usually ${st.usual} ms, worst ${st.worst} ms${st.lost ? `, ${st.lost} without an answer` : ''}`;
-}
-
 // Lines side by side, newest on the right; red marks on top where nothing came back.
 function spark(series, slots) {
   const NS = 'http://www.w3.org/2000/svg';
@@ -407,13 +403,16 @@ function spark(series, slots) {
   return svg;
 }
 
-function lagRow(name, nums, svg, legend, verdict) {
+// The newest value of a line: "12 ms", "no answer", or "–" before anything came in.
+const lagNow = list => !list.length ? '–' : list[list.length - 1] >= 0 ? `${list[list.length - 1]} ms` : 'no answer';
+
+// A name with what it means, the graph, and each line's latest value.
+function lagRow(name, svg, legend, verdict) {
   return el('div', { className: 'lagrow' },
-    el('div', { className: 'name' }, name),
-    el('div', { className: 'nums' }, ...nums.flatMap((n, i) => (i ? [el('br'), n] : [n]))),
+    el('div', { className: 'head' }, el('span', { className: 'name' }, name), el('span', { className: `verdict ${verdict[0]}` }, verdict[1])),
     svg,
-    el('div', { className: 'legend' }, ...legend.map(([color, text]) => el('span', {}, el('span', { className: 'key', style: `background:${color}` }), text))),
-    el('div', { className: `verdict ${verdict[0]}` }, verdict[1]));
+    el('div', { className: 'legend' }, ...legend.map(([color, text, list]) =>
+      el('span', {}, el('span', { className: 'key', style: `background:${color}` }), text, el('b', {}, lagNow(list))))));
 }
 
 function renderLag(s) {
@@ -424,16 +423,13 @@ function renderLag(s) {
   const router = lagStats(lag.self.router, 100), internet = lagStats(lag.self.internet, 150);
   const selfBad = router.n >= 5 && (router.usual > 20 || router.spikes >= 3 || router.lost > 2);
   const selfVerdict = router.n < 5 ? ['', 'Measuring…']
-    : !lag.self.gateway ? ['', 'Could not find your router’s address, so only the internet is checked.']
-    : selfBad ? ['bad', 'This PC’s connection to your router is slow. That’s usually Wi-Fi that’s busy or weak; ' +
-        'a network cable fixes it. Everyone using the VPN feels this.']
-    : internet.usual > 80 || internet.lost > 2 ? ['bad', 'Your router answers quickly, but your internet itself is slow right now ' +
-        '(something big uploading or downloading?).']
-    : ['ok', 'This PC’s connection is fine.'];
+    : !lag.self.gateway ? ['', 'Router not found, so only the internet is checked.']
+    : selfBad ? ['bad', 'Slow Wi-Fi on this PC. A network cable fixes it.']
+    : internet.usual > 80 || internet.lost > 2 ? ['bad', 'Your internet is slow right now. Something big downloading?']
+    : ['ok', 'All good.'];
   const rows = [lagRow('This PC (the server)',
-    [describe(router, `To your router${lag.self.gateway ? ` (${lag.self.gateway})` : ''}`), describe(internet, 'To the internet (1.1.1.1)')],
     spark([{ values: lag.self.internet, color: gray, width: 1.5 }, { values: lag.self.router, color: blue, width: 2.5, markLost: true }], 60),
-    [[blue, 'To your router'], [gray, 'To the internet']], selfVerdict)];
+    [[blue, 'Router', lag.self.router], [gray, 'Internet', lag.self.internet]], selfVerdict)];
 
   const names = new Map(s.users.map(u => [u.id, u.name]));
   for (const [id, p] of Object.entries(lag.people)) {
@@ -442,19 +438,17 @@ function renderLag(s) {
     const ownLags = direct.answers && (direct.usual > 150 || direct.lost > 2 || direct.spikes >= 3);
     const vpnLags = vpn.lost > 1 || vpn.spikes >= 3;
     const verdict = vpn.n < 10 ? ['', 'Measuring…']
-      : ownLags ? ['bad', 'Their own internet is lagging too, even without the VPN: their Wi-Fi or their internet provider.']
-      : vpnLags && selfBad ? ['bad', 'Lagging, and this PC’s own connection is slow too (see above): fix that first.']
-      : vpnLags ? ['bad', 'Their internet and this PC are fine, but the way between you lags: your home upload may be full ' +
-          '(try a lower download limit), or their provider is slowing down foreign connections.']
-      : vpn.usual > 300 ? ['bad', 'Steady, but slow: the way between you is long. Games feel it; browsing is fine.']
-      : ['ok', 'Looks good.'];
+      : ownLags ? ['bad', 'Their own internet is slow, even without the VPN.']
+      : vpnLags && selfBad ? ['bad', 'Lagging. This PC’s connection is slow too: fix that first.']
+      : vpnLags ? ['bad', 'Lagging between you. Try a lower download limit.']
+      : vpn.usual > 300 ? ['bad', 'Steady, but slow. Fine for browsing.']
+      : ['ok', 'All good.'];
     rows.push(lagRow(names.get(id) || 'Someone',
-      [describe(vpn, 'Through the VPN to this PC'), direct.answers ? describe(direct, 'Their own internet, without the VPN (Yandex)') : 'Their own internet: Yandex didn’t answer, so it isn’t measured.'],
       spark([{ values: p.direct, color: gray, width: 1.5 }, { values: p.vpn, color: blue, width: 2.5, markLost: true }], 120),
-      [[blue, 'Through the VPN'], [gray, 'Their internet without the VPN']], verdict));
+      [[blue, 'VPN', p.vpn], [gray, 'Without VPN', p.direct]], verdict));
   }
   if (!Object.keys(lag.people).length) {
-    rows.push(el('div', { className: 'empty' }, 'Each person’s lag shows up here, live, while they’re connected with Nevatch 1.6 or newer.'));
+    rows.push(el('div', { className: 'empty' }, 'Each person’s lag shows up here while they’re connected.'));
   }
   $('#lag').replaceChildren(...rows);
 }

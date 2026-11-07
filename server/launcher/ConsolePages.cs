@@ -36,8 +36,8 @@ namespace Nevatch.Server
         readonly FieldRow addBar;
         readonly RowList peopleList = new RowList(132, Glyph.People, "", "");
         readonly List<PersonRow> personRows = new List<PersonRow>();
-        readonly LagRow selfLag = new LagRow(60, "To your router", "To the internet");
-        readonly RowList lagList = new RowList(360, Glyph.Speed, "", "");
+        readonly LagRow selfLag = new LagRow(60, "Router", "Internet");
+        readonly RowList lagList = new RowList(232, Glyph.Speed, "", "");
         readonly List<LagRow> lagRows = new List<LagRow>();
         readonly List<string> lagIds = new List<string>();
         readonly ChecklistCard checklist = new ChecklistCard();
@@ -72,7 +72,7 @@ namespace Nevatch.Server
             People.Add(addBar, 46);
             People.Add(peopleList, -1);
 
-            Lag.Add(selfLag, 360);
+            Lag.Add(selfLag, 232);
             Lag.Add(lagList, -1);
             Lag.VisibleChanged += (s, e) => { if (Lag.Visible) Poll(); };
 
@@ -124,7 +124,7 @@ namespace Nevatch.Server
             lagIds.Clear();
             lagList.SetEmpty("The server isn't running", "Start it on the Home page to see the lag.");
             lagList.SetRows(new Control[0]);
-            selfLag.Set("This PC (the server)", "Measured while the server is running.", "", new int[0], new int[0], "", Theme.Muted);
+            selfLag.Set("This PC (the server)", new int[0], new int[0], "Measured while the server is running.", Theme.Muted);
             checklist.Set(new List<CheckItem> { new CheckItem(Check.Todo, "The server isn't running. Start it on the Home page.", null) });
             webCard.Set("Web console", "Available while the server is running.");
             serverCard.SetMessage(null, Theme.Muted);
@@ -274,7 +274,7 @@ namespace Nevatch.Server
 
         void ShowLag(Status s)
         {
-            lagList.SetEmpty("No one connected", "Each person's lag shows up here, live, while they're connected with Nevatch 1.6 or newer.");
+            lagList.SetEmpty("No one connected", "Each person's lag shows up here while they're connected.");
             bool selfSlow = LagReport.ForThisPc(s, selfLag);
             bool same = lagIds.Count == s.Lag.Count;
             for (int i = 0; same && i < lagIds.Count; i++) same = lagIds[i] == s.Lag[i].Id;
@@ -284,7 +284,7 @@ namespace Nevatch.Server
                 lagIds.Clear();
                 foreach (PersonLag lag in s.Lag)
                 {
-                    lagRows.Add(new LagRow(120, "Through the VPN", "Their internet without the VPN"));
+                    lagRows.Add(new LagRow(120, "VPN", "Without VPN"));
                     lagIds.Add(lag.Id);
                 }
                 lagList.SetRows(lagRows);
@@ -654,12 +654,6 @@ namespace Nevatch.Server
             };
         }
 
-        static string Describe(Stats st, string what)
-        {
-            if (!st.Answers) return what + ": no answer";
-            return what + ": usually " + st.Usual + " ms, worst " + st.Worst + " ms" + (st.Lost > 0 ? ", " + st.Lost + " without an answer" : "");
-        }
-
         // A home router normally answers in a few ms, so anything slower is this PC's own connection (Wi-Fi).
         // Returns whether it is slow.
         public static bool ForThisPc(Status s, LagRow row)
@@ -669,16 +663,11 @@ namespace Nevatch.Server
             string verdict;
             Color color = Look.Amber;
             if (router.Count < 5) { verdict = "Measuring…"; color = Theme.Muted; }
-            else if (s.Gateway == null) { verdict = "Could not find your router's address, so only the internet is checked."; color = Theme.Muted; }
-            else if (slow) verdict = "This PC's connection to your router is slow. That's usually Wi-Fi that's busy or weak; " +
-                "a network cable fixes it. Everyone using the VPN feels this.";
-            else if (internet.Usual > 80 || internet.Lost > 2) verdict = "Your router answers quickly, but your internet itself is slow right now " +
-                "(something big uploading or downloading?).";
-            else { verdict = "This PC's connection is fine."; color = Theme.Green; }
-            row.Set("This PC (the server)",
-                Describe(router, "To your router" + (s.Gateway != null ? " (" + s.Gateway + ")" : "")),
-                Describe(internet, "To the internet (1.1.1.1)"),
-                s.SelfRouter, s.SelfInternet, verdict, color);
+            else if (s.Gateway == null) { verdict = "Router not found, so only the internet is checked."; color = Theme.Muted; }
+            else if (slow) verdict = "Slow Wi-Fi on this PC. A network cable fixes it.";
+            else if (internet.Usual > 80 || internet.Lost > 2) verdict = "Your internet is slow right now. Something big downloading?";
+            else { verdict = "All good."; color = Theme.Green; }
+            row.Set("This PC (the server)", s.SelfRouter, s.SelfInternet, verdict, color);
             return slow;
         }
 
@@ -691,15 +680,12 @@ namespace Nevatch.Server
             string verdict;
             Color color = Look.Amber;
             if (vpn.Count < 10) { verdict = "Measuring…"; color = Theme.Muted; }
-            else if (ownLags) verdict = "Their own internet is lagging too, even without the VPN: their Wi-Fi or their internet provider.";
-            else if (vpnLags && selfSlow) verdict = "Lagging, and this PC's own connection is slow too (see above): fix that first.";
-            else if (vpnLags) verdict = "Their internet and this PC are fine, but the way between you lags: your home upload may be full " +
-                "(try a lower download limit), or their provider is slowing down foreign connections.";
-            else if (vpn.Usual > 300) verdict = "Steady, but slow: the way between you is long. Games feel it; browsing is fine.";
-            else { verdict = "Looks good."; color = Theme.Green; }
-            row.Set(name, Describe(vpn, "Through the VPN to this PC"),
-                direct.Answers ? Describe(direct, "Their own internet, without the VPN (Yandex)") : "Their own internet: Yandex didn't answer, so it isn't measured.",
-                lag.Vpn, lag.Direct, verdict, color);
+            else if (ownLags) verdict = "Their own internet is slow, even without the VPN.";
+            else if (vpnLags && selfSlow) verdict = "Lagging. This PC's connection is slow too: fix that first.";
+            else if (vpnLags) verdict = "Lagging between you. Try a lower download limit.";
+            else if (vpn.Usual > 300) verdict = "Steady, but slow. Fine for browsing.";
+            else { verdict = "All good."; color = Theme.Green; }
+            row.Set(name, lag.Vpn, lag.Direct, verdict, color);
         }
     }
 
@@ -1125,7 +1111,8 @@ namespace Nevatch.Server
         }
     }
 
-    // One row on the Lag page: two lines of round trips over the last two minutes, the numbers, and what they mean.
+    // One row on the Lag page: a name with what it means, two lines of round trips over the last two minutes,
+    // and each line's latest value.
     public class LagRow : Card
     {
         // Fine steps at the low end so a 1-12 ms line isn't flat at the bottom of a 50 ms graph.
@@ -1133,7 +1120,7 @@ namespace Nevatch.Server
         static readonly Color OtherColor = Color.FromArgb(150, 156, 186);
         readonly int slots;
         readonly string mainName, otherName;
-        string title = "", line1 = "", line2 = "", verdict = "";
+        string title = "", verdict = "";
         Color verdictColor = Theme.Muted;
         int[] main = new int[0], other = new int[0];
 
@@ -1146,11 +1133,9 @@ namespace Nevatch.Server
             this.otherName = otherName;
         }
 
-        public void Set(string title, string line1, string line2, int[] main, int[] other, string verdict, Color verdictColor)
+        public void Set(string title, int[] main, int[] other, string verdict, Color verdictColor)
         {
             this.title = title;
-            this.line1 = line1;
-            this.line2 = line2;
             this.main = main;
             this.other = other;
             this.verdict = verdict;
@@ -1158,20 +1143,12 @@ namespace Nevatch.Server
             Invalidate();
         }
 
-        // "now 3 ms · avg 4 · min 1 · max 9 · jitter 1.2 ms · 0% lost" for one line.
-        static string Summary(int[] values)
+        // The newest value: "12 ms", "no answer", or "–" before anything came in.
+        static string Now(int[] values)
         {
-            if (values.Length == 0) return "no data yet";
-            int[] ok = values.Where(v => v >= 0).ToArray();
-            int lost = values.Length - ok.Length;
+            if (values.Length == 0) return "–";
             int last = values[values.Length - 1];
-            string now = last >= 0 ? last + " ms" : "no answer";
-            if (ok.Length == 0) return "now " + now + " · all lost";
-            double avg = ok.Average(), jitter = 0;
-            for (int i = 1; i < ok.Length; i++) jitter += Math.Abs(ok[i] - ok[i - 1]);
-            if (ok.Length > 1) jitter /= ok.Length - 1;
-            return string.Format(CultureInfo.InvariantCulture, "now {0} · avg {1:0.#} · min {2} · max {3} · jitter {4:0.#} ms · {5}% lost",
-                now, avg, ok.Min(), ok.Max(), jitter, (int)Math.Round(100.0 * lost / values.Length));
+            return last >= 0 ? last + " ms" : "no answer";
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -1180,17 +1157,19 @@ namespace Nevatch.Server
             Art.Smooth(g);
             int pad = Theme.S(22), width = Math.Max(10, Width - pad * 2), y = Theme.S(18);
             const TextFormatFlags line = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
-            int titleH = Look.LineHeight(Fonts.CardTitle), lineH = Look.LineHeight(Look.Hint), smallH = Look.LineHeight(Look.Small);
-            TextRenderer.DrawText(g, title, Fonts.CardTitle, new Rectangle(pad, y, width, titleH), Theme.Text, line);
-            y += titleH + Theme.S(4);
-            TextRenderer.DrawText(g, line1, Look.Hint, new Rectangle(pad, y, width, lineH), Theme.Muted, line);
-            y += lineH;
-            TextRenderer.DrawText(g, line2, Look.Hint, new Rectangle(pad, y, width, lineH), Theme.Muted, line);
-            y += lineH + Theme.S(12);
+            int titleH = Look.LineHeight(Fonts.CardTitle), smallH = Look.LineHeight(Look.Small);
+
+            // The name on the left, what it means on the right, on one line.
+            int titleW = Math.Min(width / 2, TextRenderer.MeasureText(g, title, Fonts.CardTitle, new Size(width, titleH), TextFormatFlags.NoPadding).Width);
+            TextRenderer.DrawText(g, title, Fonts.CardTitle, new Rectangle(pad, y, titleW, titleH), Theme.Text, line);
+            int verdictX = pad + titleW + Theme.S(16);
+            TextRenderer.DrawText(g, verdict, Fonts.CardText, new Rectangle(verdictX, y, Math.Max(0, pad + width - verdictX), titleH), verdictColor,
+                line | TextFormatFlags.Right | TextFormatFlags.VerticalCenter);
+            y += titleH + Theme.S(12);
 
             // Graph: ms labels in a gutter on the left, gridlines every quarter, time labels underneath.
             int gutter = Theme.S(52);
-            var graph = new Rectangle(pad + gutter, y, Math.Max(10, width - gutter), Theme.S(130));
+            var graph = new Rectangle(pad + gutter, y, Math.Max(10, width - gutter), Theme.S(120));
             using (GraphicsPath p = Art.RoundRect(graph, Theme.S(8)))
             using (var b = new SolidBrush(Theme.ContentBg))
                 g.FillPath(b, p);
@@ -1226,23 +1205,22 @@ namespace Nevatch.Server
             y = graph.Bottom + Theme.S(4);
             var timeRow = new Rectangle(graph.X, y, graph.Width, smallH);
             TextRenderer.DrawText(g, "2 min ago", Look.Small, timeRow, Theme.Muted, TextFormatFlags.NoPadding | TextFormatFlags.Left);
-            TextRenderer.DrawText(g, "1 min ago", Look.Small, timeRow, Theme.Muted, TextFormatFlags.NoPadding | TextFormatFlags.HorizontalCenter);
             TextRenderer.DrawText(g, "now", Look.Small, timeRow, Theme.Muted, TextFormatFlags.NoPadding | TextFormatFlags.Right);
             y += smallH + Theme.S(10);
 
-            // One legend line per series, with its numbers.
+            // One legend line: each series with its latest value.
+            int x = pad + gutter;
             foreach (var key in new[] { Tuple.Create(Theme.Accent, mainName, main), Tuple.Create(OtherColor, otherName, other) })
             {
-                using (var b = new SolidBrush(key.Item1)) g.FillRectangle(b, pad, y + smallH / 2 - Theme.S(1), Theme.S(14), Theme.S(3));
-                int x = pad + Theme.S(20);
-                TextRenderer.DrawText(g, key.Item2, Look.Small, new Point(x, y), Theme.Text, TextFormatFlags.NoPadding);
-                x += TextRenderer.MeasureText(key.Item2, Look.Small, new Size(1000, 100), TextFormatFlags.NoPadding).Width + Theme.S(10);
-                TextRenderer.DrawText(g, Summary(key.Item3), Look.Small, new Rectangle(x, y, Math.Max(0, pad + width - x), smallH), Theme.Muted, line);
-                y += smallH + Theme.S(4);
+                using (var b = new SolidBrush(key.Item1)) g.FillRectangle(b, x, y + smallH / 2 - Theme.S(1), Theme.S(14), Theme.S(3));
+                x += Theme.S(20);
+                TextRenderer.DrawText(g, key.Item2, Look.Small, new Point(x, y), Theme.Muted, TextFormatFlags.NoPadding);
+                x += TextRenderer.MeasureText(key.Item2, Look.Small, new Size(1000, 100), TextFormatFlags.NoPadding).Width + Theme.S(6);
+                string now = Now(key.Item3);
+                TextRenderer.DrawText(g, now, Fonts.CardTitle, new Rectangle(x, y - Theme.S(3), Theme.S(120), smallH + Theme.S(6)), Theme.Text,
+                    line | TextFormatFlags.VerticalCenter);
+                x += TextRenderer.MeasureText(now, Fonts.CardTitle, new Size(1000, 100), TextFormatFlags.NoPadding).Width + Theme.S(28);
             }
-            y += Theme.S(6);
-            TextRenderer.DrawText(g, verdict, Fonts.CardText, new Rectangle(pad, y, width, Math.Max(0, Height - y - Theme.S(10))), verdictColor,
-                TextFormatFlags.NoPadding | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis);
         }
 
         // A gap where nothing came back; for the main line also a red mark at the top, a soft fill under it
