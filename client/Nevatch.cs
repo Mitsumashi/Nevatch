@@ -1889,7 +1889,7 @@ namespace Nevatch
         bool gaveUp; // reconnecting ran out of time; it starts again when the network comes back
         bool startupConnect; // the connect Nevatch starts by itself: if it fails, it keeps trying like after a break
 
-        public MainForm(bool startMinimized, bool connectNow, bool updated) : base("Nevatch", "Nevatch", "Secure. Private. Free.")
+        public MainForm(bool startMinimized, bool connectNow, bool updated) : base("Nevatch", "Nevatch", "")
         {
             this.startMinimized = startMinimized;
             this.connectNow = connectNow;
@@ -1960,7 +1960,7 @@ namespace Nevatch
             AddPage(Glyph.Log, "Log", logPage);
             AddPage(Glyph.Settings, "Settings", settings);
             AddPage(MonitorPage.Icon, "Monitor", monitorPage);
-            AddPage(Glyph.Info, "About", new AboutPage("Nevatch", "Secure. Private. Free."));
+            AddPage(Glyph.Info, "About", new AboutPage("Nevatch", "A private VPN, run by a friend you trust."));
 
             logTimer.Tick += (s, e) =>
             {

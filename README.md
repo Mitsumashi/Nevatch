@@ -1,7 +1,5 @@
 <img src="docs/logo.png" alt="Nevatch">
 
-*Secure. Private. Free.*
-
 Nevatch is a VPN you run yourself, so friends and family in a censored country can use the free internet through your connection.
 
 You run **Nevatch Server** on a computer at home (or a rented server). Your friends install the **Nevatch** app and click **Connect**. No accounts, no subscriptions, nothing to pay.
