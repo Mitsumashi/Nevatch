@@ -1,10 +1,12 @@
-<img src="docs/logo.png" alt="Nevatch">
+# Nevatch
 
 Nevatch is a VPN you run yourself, so friends and family in a censored country can use the free internet through your connection.
 
 Run **Nevatch Server** on a PC at home for your friends, or for yourself on a VPS you rent or buy, with Docker. Install the **Nevatch** app on Windows or Android and click **Connect**. No accounts, no subscriptions, nothing to pay.
 
 Nevatch is built on **[Xray-core](https://github.com/XTLS/Xray-core)** (VLESS + Reality), a proven tool against censorship. Nevatch makes it simple to use.
+
+This guide, the changelog, and the Android and Docker guides are also in the [`docs`](docs) folder as PDFs.
 
 ---
 
